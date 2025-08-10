@@ -16,10 +16,14 @@ from typing import List
 from unet_architecture import UNet2DConditionModel
 from vae_architecture import AutoencoderKL
 
-def load_sdxl_components(model_id: str = "stabilityai/stable-diffusion-xl-base-1.0", vae_id: str = "madebyollin/sdxl-vae-fp16-fix"):
+def load_sdxl_components(
+    model_id: str = "stabilityai/stable-diffusion-xl-base-1.0",
+    vae_id: str = "madebyollin/sdxl-vae-fp16-fix"
+):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Kullanılan cihaz: {device}")
     
+    # FP16 sadece CUDA cihazda kullanılır, değilse FP32
     torch_dtype = torch.float16 if device == "cuda" else torch.float32
 
     components = {}
@@ -51,14 +55,15 @@ def load_sdxl_components(model_id: str = "stabilityai/stable-diffusion-xl-base-1
             model_id, subfolder="scheduler"
         )
         
-        return components
+        return components, device, torch_dtype
     
     except Exception as e:
         print(f"Model bileşenleri yüklenirken bir hata oluştu: {e}")
-        return None
+        return None, None, None
 
-def run_diffusion_process(components, prompt: str):
-    pipe = DiffusionPipeline(**components)
+def run_diffusion_process(components, prompt: str, device: str, torch_dtype):
+    pipe = DiffusionPipeline(**components, torch_dtype=torch_dtype)
+    pipe = pipe.to(device)
     pipe.set_progress_bar_config(disable=True)
     
     generated_image = pipe(
@@ -83,7 +88,7 @@ def create_video_from_frames(frame_paths: List[str], fps: int = 12, output_name:
         print(f"Video oluşturulurken bir hata oluştu: {e}")
 
 if __name__ == "__main__":
-    sdxl_components = load_sdxl_components()
+    sdxl_components, device, torch_dtype = load_sdxl_components()
     
     if sdxl_components:
         prompt_text = "full shot of a majestic queen, standing on an ornate, sun-drenched marble balcony overlooking a sprawling, high-fantasy cityscape at golden hour. Her deep crimson silk gown, with intricate golden embroidery, cascades to the floor, catching the brilliant last rays of sunlight. A gentle breeze lifts the fabric, revealing a soft, inner lining. The queen's face is a perfect blend of serene contemplation and powerful authority. She wears an elegant, subtle crown adorned with tiny rubies that catch the light. The background features towering, spired castles and an endless sky painted in hues of orange and purple. Highly detailed, photorealistic, cinematic lighting, 8k, film grain, hyper-realistic textures, volumetric light, bokeh, masterpiece, best quality, ultra-detailed."
@@ -102,7 +107,9 @@ if __name__ == "__main__":
             
             generated_image = run_diffusion_process(
                 components=sdxl_components,
-                prompt=current_prompt
+                prompt=current_prompt,
+                device=device,
+                torch_dtype=torch_dtype
             )
             
             image_path = os.path.join(output_folder, f"frame_{i:04d}.png")
